@@ -1,0 +1,32 @@
+# Rust
+target/
+*.swp
+
+# Tauri
+src-tauri/gen/
+
+# Sidecar binaries (downloaded/built per-platform)
+binaries/sidecar-slim*
+binaries/truffle-sidecar*
+!binaries/.gitkeep
+
+# Generated icons (keep gen script, ignore outputs)
+src-tauri/icons/*.png
+src-tauri/icons/gen_placeholder
+!src-tauri/icons/gen_placeholder.rs
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Claude
+.claude/

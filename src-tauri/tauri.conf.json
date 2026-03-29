@@ -1,0 +1,36 @@
+{
+  "productName": "Cheeseboard",
+  "version": "0.1.0",
+  "identifier": "com.cheeseboard.app",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "category": "Utility",
+    "shortDescription": "Cross-device clipboard sync over Tailscale",
+    "longDescription": "Cheeseboard syncs your clipboard across all devices on your Tailscale network. Copy on one device, paste on another.",
+    "copyright": "Copyright (c) 2026 James Yong",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libappindicator3-1"]
+      }
+    }
+  }
+}
