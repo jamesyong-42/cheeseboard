@@ -47,11 +47,20 @@ jobs:
             patchelf \
             libxdo-dev
 
-      - name: Generate icons
+      - name: Generate icons (Unix)
+        if: matrix.os != 'windows'
         working-directory: src-tauri/icons
         run: |
           rustc gen_placeholder.rs -o gen_placeholder
           ./gen_placeholder
+
+      - name: Generate icons (Windows)
+        if: matrix.os == 'windows'
+        working-directory: src-tauri/icons
+        shell: pwsh
+        run: |
+          rustc gen_placeholder.rs -o gen_placeholder.exe
+          .\gen_placeholder.exe
 
       - name: Check formatting
         working-directory: src-tauri
