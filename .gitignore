@@ -18,6 +18,7 @@ binaries/truffle-sidecar*
 # Generated icons (keep gen script, ignore outputs)
 src-tauri/icons/*.png
 src-tauri/icons/*.ico
+src-tauri/icons/*.icns
 src-tauri/icons/gen_placeholder
 !src-tauri/icons/gen_placeholder.rs
 

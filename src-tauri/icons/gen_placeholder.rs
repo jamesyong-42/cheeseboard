@@ -6,6 +6,8 @@
 fn main() {
     let png_32 = create_minimal_png(32, 32, [200, 180, 120, 255]); // cheese-ish yellow
     let png_128 = create_minimal_png(128, 128, [200, 180, 120, 255]);
+    let png_256 = create_minimal_png(256, 256, [200, 180, 120, 255]);
+    let png_512 = create_minimal_png(512, 512, [200, 180, 120, 255]);
 
     for name in &["icon.png", "32x32.png", "128x128.png", "128x128@2x.png"] {
         let data = if name.contains("128") { &png_128 } else { &png_32 };
@@ -17,6 +19,11 @@ fn main() {
     let ico_data = create_ico(&png_32);
     std::fs::write("icon.ico", &ico_data).unwrap();
     println!("Created icon.ico");
+
+    // Generate ICNS (required for macOS builds)
+    let icns_data = create_icns(&png_256, &png_512);
+    std::fs::write("icon.icns", &icns_data).unwrap();
+    println!("Created icon.icns");
 }
 
 fn create_ico(png_data: &[u8]) -> Vec<u8> {
@@ -39,6 +46,31 @@ fn create_ico(png_data: &[u8]) -> Vec<u8> {
     // PNG data
     ico.extend_from_slice(png_data);
     ico
+}
+
+fn create_icns(png_256: &[u8], png_512: &[u8]) -> Vec<u8> {
+    // ICNS format: magic + length, then icon entries (type + length + PNG data)
+    // ic08 = 256x256, ic09 = 512x512
+    let entry_256_len = 8 + png_256.len();
+    let entry_512_len = 8 + png_512.len();
+    let total_len = 8 + entry_256_len + entry_512_len;
+
+    let mut icns = Vec::new();
+    // Header
+    icns.extend_from_slice(b"icns");
+    icns.extend_from_slice(&(total_len as u32).to_be_bytes());
+
+    // 256x256 entry (ic08)
+    icns.extend_from_slice(b"ic08");
+    icns.extend_from_slice(&(entry_256_len as u32).to_be_bytes());
+    icns.extend_from_slice(png_256);
+
+    // 512x512 entry (ic09)
+    icns.extend_from_slice(b"ic09");
+    icns.extend_from_slice(&(entry_512_len as u32).to_be_bytes());
+    icns.extend_from_slice(png_512);
+
+    icns
 }
 
 fn create_minimal_png(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
