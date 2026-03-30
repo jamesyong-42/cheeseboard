@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 truffle = "0.3"
+open = "5"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 arboard = { version = "3", features = ["wayland-data-control"] }

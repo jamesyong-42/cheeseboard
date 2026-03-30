@@ -80,6 +80,11 @@ pub fn spawn_tray_updater(_app_handle: AppHandle, mut event_rx: broadcast::Recei
                 Ok(PeerEvent::Disconnected(id)) => {
                     tracing::info!("Peer disconnected: {id}");
                 }
+                Ok(PeerEvent::AuthRequired { url }) => {
+                    update_status("Cheeseboard: Auth Required");
+                    tracing::info!("Tailscale auth required: {url}");
+                    let _ = open::that(&url);
+                }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("Tray event receiver lagged by {n}");
                 }
