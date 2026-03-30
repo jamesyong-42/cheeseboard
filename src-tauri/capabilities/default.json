@@ -1,9 +1,16 @@
 {
   "identifier": "default",
   "description": "Cheeseboard default capabilities",
-  "windows": [],
+  "windows": ["onboarding"],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide",
     "shell:allow-open"
   ]
 }

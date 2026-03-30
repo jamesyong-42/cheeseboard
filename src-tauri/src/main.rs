@@ -12,7 +12,7 @@ use clipboard::monitor::ClipboardMonitor;
 use clipboard::store::ClipboardHistoryStore;
 use clipboard::thread::ClipboardThread;
 use config::AppConfig;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use truffle::NodeBuilder;
 
 fn main() {
@@ -27,10 +27,18 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .invoke_handler(tauri::generate_handler![open_url, close_onboarding])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
             tray::build_tray(&app_handle)?;
+
+            // Show onboarding window on first launch (or if no auth state)
+            if needs_onboarding() {
+                if let Some(win) = app.get_webview_window("onboarding") {
+                    let _ = win.show();
+                }
+            }
 
             let handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
@@ -45,6 +53,38 @@ fn main() {
         .expect("error while running Cheeseboard");
 }
 
+/// Check if this is first launch (no tsnet state dir yet).
+fn needs_onboarding() -> bool {
+    match AppConfig::state_dir() {
+        Ok(dir) => !dir.join("key.json").exists(),
+        Err(_) => true,
+    }
+}
+
+#[tauri::command]
+fn open_url(url: String) {
+    let _ = open::that(&url);
+}
+
+#[tauri::command]
+fn close_onboarding(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("onboarding") {
+        let _ = win.hide();
+    }
+}
+
+/// Emit a status event to the onboarding window.
+fn emit_status(app: &tauri::AppHandle, state: &str, auth_url: Option<&str>, devices: &[String]) {
+    let _ = app.emit(
+        "cheeseboard://status",
+        serde_json::json!({
+            "state": state,
+            "auth_url": auth_url,
+            "devices": devices,
+        }),
+    );
+}
+
 async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Step 1: Load config
     let config = AppConfig::load_or_create()?;
@@ -52,13 +92,16 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 
     // Step 2: Resolve sidecar binary path
     let sidecar_path = resolve_sidecar_path(&app_handle)?;
+    tracing::info!("Sidecar: {}", sidecar_path.display());
 
     // Step 3: State directory for tsnet
     let state_dir = AppConfig::state_dir()?;
     std::fs::create_dir_all(&state_dir)?;
     let state_dir_str = state_dir.to_string_lossy().to_string();
 
-    // Step 4: Build truffle Node (handles sidecar, bridge, transport internally)
+    emit_status(&app_handle, "connecting", None, &[]);
+
+    // Step 4: Build truffle Node
     let hostname = format!(
         "cheeseboard-{}",
         &config.device_id[..config.device_id.len().min(8)]
@@ -88,7 +131,10 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 
     // Step 7: Spawn tray updater with peer events
     let peer_rx = node.on_peer_change();
-    tray::spawn_tray_updater(app_handle, peer_rx);
+    tray::spawn_tray_updater(app_handle.clone(), peer_rx);
+
+    // Connected -- notify the onboarding window
+    emit_status(&app_handle, "connected", None, &[]);
 
     // Keep node alive for the lifetime of the app.
     std::mem::forget(node);
@@ -99,11 +145,6 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 }
 
 /// Resolve the path to the truffle sidecar binary.
-///
-/// Search order:
-/// 1. Tauri resource directory (bundled with app)
-/// 2. truffle::sidecar_path() (build-time download from truffle-sidecar crate)
-/// 3. binaries/ directory (development override)
 fn resolve_sidecar_path(
     app_handle: &tauri::AppHandle,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {

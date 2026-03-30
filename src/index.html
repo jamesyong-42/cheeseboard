@@ -2,9 +2,252 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cheeseboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        .container {
+            text-align: center;
+            max-width: 400px;
+            padding: 40px;
+        }
+
+        .logo {
+            font-size: 48px;
+            margin-bottom: 8px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        /* States */
+        .state { display: none; }
+        .state.active { display: block; }
+
+        /* Connecting state */
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #333;
+            border-top-color: #c8b478;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .status-text {
+            font-size: 14px;
+            color: #aaa;
+        }
+
+        /* Auth state */
+        .auth-message {
+            font-size: 14px;
+            color: #ccc;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .auth-btn {
+            display: inline-block;
+            padding: 12px 32px;
+            background: #c8b478;
+            color: #1a1a1a;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .auth-btn:hover { background: #d4c08a; }
+        .auth-btn:active { background: #b8a468; }
+
+        .auth-hint {
+            font-size: 12px;
+            color: #666;
+            margin-top: 16px;
+        }
+
+        /* Connected state */
+        .connected-icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+
+        .connected-text {
+            font-size: 16px;
+            color: #6ec87a;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .connected-hint {
+            font-size: 13px;
+            color: #888;
+        }
+
+        .device-list {
+            margin-top: 20px;
+            padding: 12px 16px;
+            background: #222;
+            border-radius: 8px;
+            text-align: left;
+        }
+
+        .device-list-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .device-item {
+            font-size: 14px;
+            color: #ccc;
+            padding: 4px 0;
+        }
+
+        .device-item::before {
+            content: "";
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #6ec87a;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .close-btn {
+            margin-top: 24px;
+            padding: 8px 24px;
+            background: transparent;
+            color: #888;
+            border: 1px solid #333;
+            border-radius: 6px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .close-btn:hover {
+            color: #ccc;
+            border-color: #555;
+        }
+    </style>
 </head>
 <body>
-    <!-- Tray-only app: no visible window -->
+    <div class="container">
+        <div class="logo">🧀</div>
+        <h1>Cheeseboard</h1>
+        <p class="subtitle">Clipboard sync across your devices</p>
+
+        <!-- State: Connecting -->
+        <div id="state-connecting" class="state active">
+            <div class="spinner"></div>
+            <p class="status-text">Starting mesh network...</p>
+        </div>
+
+        <!-- State: Auth Required -->
+        <div id="state-auth" class="state">
+            <p class="auth-message">
+                Sign in to your Tailscale account to connect<br>
+                your devices on the mesh network.
+            </p>
+            <button class="auth-btn" id="auth-btn" onclick="openAuthUrl()">
+                Sign in with Tailscale
+            </button>
+            <p class="auth-hint">Opens in your browser</p>
+        </div>
+
+        <!-- State: Connected -->
+        <div id="state-connected" class="state">
+            <div class="connected-icon">&#10003;</div>
+            <p class="connected-text">Connected</p>
+            <p class="connected-hint">Clipboard syncing is active. You can close this window.</p>
+            <div id="device-list" class="device-list" style="display:none;">
+                <div class="device-list-title">Devices</div>
+                <div id="device-items"></div>
+            </div>
+            <button class="close-btn" onclick="closeWindow()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        let authUrl = null;
+
+        function showState(name) {
+            document.querySelectorAll('.state').forEach(el => el.classList.remove('active'));
+            const el = document.getElementById('state-' + name);
+            if (el) el.classList.add('active');
+        }
+
+        function openAuthUrl() {
+            if (authUrl && window.__TAURI__) {
+                window.__TAURI__.core.invoke('open_url', { url: authUrl });
+            }
+        }
+
+        function closeWindow() {
+            if (window.__TAURI__) {
+                window.__TAURI__.core.invoke('close_onboarding');
+            }
+        }
+
+        function updateDevices(devices) {
+            const list = document.getElementById('device-list');
+            const items = document.getElementById('device-items');
+            if (devices.length > 0) {
+                items.innerHTML = devices.map(d =>
+                    '<div class="device-item">' + d + '</div>'
+                ).join('');
+                list.style.display = 'block';
+            } else {
+                list.style.display = 'none';
+            }
+        }
+
+        // Listen for events from Rust
+        if (window.__TAURI__) {
+            window.__TAURI__.event.listen('cheeseboard://status', (event) => {
+                const { state, auth_url, devices } = event.payload;
+                if (state === 'auth_required' && auth_url) {
+                    authUrl = auth_url;
+                    showState('auth');
+                } else if (state === 'connected') {
+                    showState('connected');
+                    if (devices) updateDevices(devices);
+                } else if (state === 'connecting') {
+                    showState('connecting');
+                }
+            });
+        }
+    </script>
 </body>
 </html>
