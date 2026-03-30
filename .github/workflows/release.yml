@@ -1,24 +1,10 @@
 name: Release
 
 on:
-  workflow_call:
-    inputs:
-      tag_name:
-        required: true
-        type: string
-      version:
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
-    inputs:
-      tag_name:
-        description: "Release tag (e.g. v0.1.0)"
-        required: true
-        type: string
-      version:
-        description: "Version number (e.g. 0.1.0)"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -33,39 +19,35 @@ jobs:
         include:
           - name: macos-arm64
             runner: macos-latest
-            rust_target: aarch64-apple-darwin
-            tauri_args: "--target aarch64-apple-darwin"
+            target: aarch64-apple-darwin
 
           - name: macos-x64
             runner: macos-13
-            rust_target: x86_64-apple-darwin
-            tauri_args: "--target x86_64-apple-darwin"
+            target: x86_64-apple-darwin
 
           - name: linux-x64
-            runner: ubuntu-latest
-            rust_target: x86_64-unknown-linux-gnu
-            tauri_args: "--target x86_64-unknown-linux-gnu"
-
-          - name: linux-arm64
-            runner: ubuntu-latest
-            rust_target: aarch64-unknown-linux-gnu
-            tauri_args: "--target aarch64-unknown-linux-gnu"
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
 
           - name: windows-x64
             runner: windows-latest
-            rust_target: x86_64-pc-windows-msvc
-            tauri_args: "--target x86_64-pc-windows-msvc"
+            target: x86_64-pc-windows-msvc
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action/setup@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_target }}
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
 
       - name: Install system dependencies (Linux)
-        if: startsWith(matrix.name, 'linux')
+        if: matrix.name == 'linux-x64'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -75,15 +57,10 @@ jobs:
             patchelf \
             libxdo-dev
 
-      - name: Install cross-compilation tools (Linux ARM64)
-        if: matrix.name == 'linux-arm64'
-        run: |
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libc6-dev-arm64-cross
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "PKG_CONFIG_SYSROOT_DIR=/usr/aarch64-linux-gnu" >> $GITHUB_ENV
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
       - name: Generate icons
         working-directory: src-tauri/icons
@@ -91,41 +68,48 @@ jobs:
           rustc gen_placeholder.rs -o gen_placeholder
           ./gen_placeholder
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2"
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Cheeseboard ${{ github.ref_name }}"
+          releaseBody: |
+            Download the installer for your platform below.
 
-      - name: Build Tauri app
-        working-directory: src-tauri
-        run: cargo tauri build ${{ matrix.tauri_args }}
+            **macOS**: `.dmg` (Apple Silicon or Intel)
+            **Windows**: `-setup.exe`
+            **Linux**: `.deb` or `.AppImage`
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+          projectPath: src-tauri
 
-      - name: Upload release assets (macOS)
-        if: startsWith(matrix.name, 'macos')
-        run: |
-          DMG=$(find src-tauri/target/${{ matrix.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
-          if [ -n "$DMG" ]; then
-            gh release upload "${{ inputs.tag_name }}" "$DMG" --clobber
-          fi
+  update-manifest:
+    name: Update manifest
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release assets (Linux)
-        if: startsWith(matrix.name, 'linux')
         run: |
-          for f in src-tauri/target/${{ matrix.rust_target }}/release/bundle/deb/*.deb; do
-            [ -f "$f" ] && gh release upload "${{ inputs.tag_name }}" "$f" --clobber
-          done
-          for f in src-tauri/target/${{ matrix.rust_target }}/release/bundle/appimage/*.AppImage; do
-            [ -f "$f" ] && gh release upload "${{ inputs.tag_name }}" "$f" --clobber
-          done
+          gh release download "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "latest.json" \
+            --dir /tmp/manifests || true
+
+      - name: Upload updater manifest
+        if: hashFiles('/tmp/manifests/latest.json') != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release assets (Windows)
-        if: matrix.name == 'windows-x64'
-        shell: pwsh
         run: |
-          Get-ChildItem -Recurse -Path "src-tauri/target/${{ matrix.rust_target }}/release/bundle" -Include "*.msi","*.exe" | ForEach-Object {
-            gh release upload "${{ inputs.tag_name }}" $_.FullName --clobber
-          }
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh release upload "${{ github.ref_name }}" \
+            /tmp/manifests/latest.json \
+            --repo "${{ github.repository }}" \
+            --clobber
