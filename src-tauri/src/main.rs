@@ -102,17 +102,33 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 
     emit_status(&app_handle, "connecting", None, &[]);
 
-    // Step 4: Build truffle Node
+    // Step 4: Build truffle Node (with auth handler for first-run login)
     let hostname = format!(
         "cheeseboard-{}",
         &config.device_id[..config.device_id.len().min(8)]
     );
+    let auth_handle = app_handle.clone();
     let node = Arc::new(
         NodeBuilder::default()
             .name(&hostname)
             .sidecar_path(&sidecar_path)
             .state_dir(&state_dir_str)
-            .build()
+            .build_with_auth_handler(move |url| {
+                tracing::info!("Auth required, notifying onboarding window");
+                // Show onboarding window and send auth URL
+                if let Some(win) = auth_handle.get_webview_window("onboarding") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+                let _ = auth_handle.emit(
+                    "cheeseboard://status",
+                    serde_json::json!({
+                        "state": "auth_required",
+                        "auth_url": url,
+                        "devices": [],
+                    }),
+                );
+            })
             .await?,
     );
 
