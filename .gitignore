@@ -5,6 +5,11 @@ target/
 # Tauri
 src-tauri/gen/
 
+# VitePress docs
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/node_modules/
+
 # Sidecar binaries (downloaded/built per-platform)
 binaries/sidecar-slim*
 binaries/truffle-sidecar*
