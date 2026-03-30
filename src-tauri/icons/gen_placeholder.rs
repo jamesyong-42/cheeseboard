@@ -3,21 +3,42 @@
 //
 // Or just create any valid 32x32 PNG named icon.png in this directory.
 
-use std::io::Write;
-
 fn main() {
-    // Minimal 32x32 RGBA PNG (white square)
-    let png_data = create_minimal_png(32, 32, [200, 180, 120, 255]); // cheese-ish yellow
+    let png_32 = create_minimal_png(32, 32, [200, 180, 120, 255]); // cheese-ish yellow
+    let png_128 = create_minimal_png(128, 128, [200, 180, 120, 255]);
 
-    for (name, _) in &[
-        ("icon.png", ()),
-        ("32x32.png", ()),
-        ("128x128.png", ()),
-        ("128x128@2x.png", ()),
-    ] {
-        std::fs::write(name, &png_data).unwrap();
+    for name in &["icon.png", "32x32.png", "128x128.png", "128x128@2x.png"] {
+        let data = if name.contains("128") { &png_128 } else { &png_32 };
+        std::fs::write(name, data).unwrap();
         println!("Created {name}");
     }
+
+    // Generate ICO (required for Windows builds)
+    let ico_data = create_ico(&png_32);
+    std::fs::write("icon.ico", &ico_data).unwrap();
+    println!("Created icon.ico");
+}
+
+fn create_ico(png_data: &[u8]) -> Vec<u8> {
+    let mut ico = Vec::new();
+    // ICO header: reserved(2) + type=1(2) + count=1(2)
+    ico.extend_from_slice(&[0, 0]); // reserved
+    ico.extend_from_slice(&1u16.to_le_bytes()); // type: icon
+    ico.extend_from_slice(&1u16.to_le_bytes()); // count: 1 image
+
+    // ICO directory entry (16 bytes)
+    ico.push(32); // width (0 = 256)
+    ico.push(32); // height
+    ico.push(0); // color palette
+    ico.push(0); // reserved
+    ico.extend_from_slice(&1u16.to_le_bytes()); // color planes
+    ico.extend_from_slice(&32u16.to_le_bytes()); // bits per pixel
+    ico.extend_from_slice(&(png_data.len() as u32).to_le_bytes()); // size of image data
+    ico.extend_from_slice(&22u32.to_le_bytes()); // offset (6 header + 16 entry = 22)
+
+    // PNG data
+    ico.extend_from_slice(png_data);
+    ico
 }
 
 fn create_minimal_png(width: u32, height: u32, color: [u8; 4]) -> Vec<u8> {
