@@ -80,8 +80,17 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
                     }
                 }
                 result = peer_rx.recv() => {
-                    if let Ok(truffle::session::PeerEvent::Left(id)) = result {
-                        self.store.remove_remote(&id);
+                    match result {
+                        Ok(truffle::session::PeerEvent::Joined(state)) => {
+                            // Send current clipboard to new peer to establish WS connection.
+                            // broadcast() only reaches already-connected peers, so we must
+                            // use send() here to trigger the lazy WebSocket handshake.
+                            self.send_current_to_peer(&state.id).await;
+                        }
+                        Ok(truffle::session::PeerEvent::Left(id)) => {
+                            self.store.remove_remote(&id);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -129,6 +138,38 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
         }
     }
 
+    /// Send current clipboard to a specific peer (triggers WS connection).
+    async fn send_current_to_peer(&self, peer_id: &str) {
+        if let Some(entry) = self.store.get_local_entry() {
+            let payload = ClipboardPayload {
+                text: entry.text,
+                fingerprint: entry.fingerprint,
+                device_id: self.device_id.clone(),
+                device_name: self.device_name.clone(),
+                timestamp: entry.timestamp,
+            };
+
+            if let Ok(json) = serde_json::to_vec(&payload) {
+                tracing::info!("Sending clipboard to new peer {peer_id} (establishing connection)");
+                if let Err(e) = self.node.send(peer_id, CLIPBOARD_NAMESPACE, &json).await {
+                    tracing::debug!("Failed to send to peer {peer_id}: {e}");
+                }
+            }
+        } else {
+            // No clipboard content yet, but still trigger connection by sending empty ping
+            tracing::info!("New peer {peer_id} discovered, establishing connection");
+            let ping = serde_json::to_vec(&serde_json::json!({
+                "text": "",
+                "fingerprint": 0u64,
+                "device_id": &self.device_id,
+                "device_name": &self.device_name,
+                "timestamp": 0u64,
+            }))
+            .unwrap();
+            let _ = self.node.send(peer_id, CLIPBOARD_NAMESPACE, &ping).await;
+        }
+    }
+
     /// Handle an incoming clipboard message from a remote device.
     async fn handle_remote_message(&self, msg: truffle::NamespacedMessage) {
         let device_id = match msg.payload.get("device_id").and_then(|v| v.as_str()) {
@@ -145,8 +186,8 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
         }
 
         let text = match msg.payload.get("text").and_then(|v| v.as_str()) {
-            Some(t) => t,
-            None => return,
+            Some(t) if !t.is_empty() => t,
+            _ => return, // skip empty pings used for connection establishment
         };
         let fingerprint = msg
             .payload
