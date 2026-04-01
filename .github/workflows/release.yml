@@ -22,7 +22,7 @@ jobs:
             target: aarch64-apple-darwin
 
           - name: macos-x64
-            runner: macos-13
+            runner: macos-latest
             target: x86_64-apple-darwin
 
           - name: linux-x64
