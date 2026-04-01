@@ -162,10 +162,14 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 }
 
 /// Resolve the path to the truffle sidecar binary.
+///
+/// Checks Tauri resource dir first (for bundled apps), then delegates to
+/// truffle::sidecar_path() which checks exe dir, config dir, system paths,
+/// and the build-time downloaded binary.
 fn resolve_sidecar_path(
     app_handle: &tauri::AppHandle,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    // 1. Tauri-bundled: check resource directory
+    // Tauri-bundled: check resource directory (for packaged .dmg/.exe/.deb)
     if let Ok(resource_dir) = app_handle.path().resource_dir() {
         for name in &["truffle-sidecar", "sidecar-slim"] {
             let path = resource_dir.join(name);
@@ -176,29 +180,9 @@ fn resolve_sidecar_path(
         }
     }
 
-    // 2. truffle-sidecar crate: build-time downloaded binary
-    let crate_path = truffle::sidecar_path();
-    if crate_path.exists() {
-        tracing::info!(
-            "Using truffle-sidecar crate binary: {}",
-            crate_path.display()
-        );
-        return Ok(crate_path);
-    }
-
-    // 3. Development: binaries/ directory
-    let dev_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("binaries");
-    for name in &["truffle-sidecar", "sidecar-slim"] {
-        let path = dev_dir.join(name);
-        if path.exists() {
-            tracing::info!("Using dev sidecar: {}", path.display());
-            return Ok(path);
-        }
-    }
-
-    // Fallback: PATH lookup
-    tracing::warn!("Sidecar not found locally, falling back to PATH");
-    Ok(crate_path)
+    // Delegate to truffle's smart sidecar resolution
+    // (exe dir -> config dir -> system paths -> build-time download -> PATH)
+    let path = truffle::sidecar_path();
+    tracing::info!("Using sidecar: {}", path.display());
+    Ok(path)
 }

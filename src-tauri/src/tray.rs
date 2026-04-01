@@ -77,10 +77,10 @@ pub fn spawn_tray_updater(app_handle: AppHandle, mut event_rx: broadcast::Receiv
                     }
                     update_devices(&peer_names);
                 }
-                Ok(PeerEvent::Connected(id)) => {
+                Ok(PeerEvent::WsConnected(id)) => {
                     tracing::info!("Peer connected: {id}");
                 }
-                Ok(PeerEvent::Disconnected(id)) => {
+                Ok(PeerEvent::WsDisconnected(id)) => {
                     tracing::info!("Peer disconnected: {id}");
                 }
                 Ok(PeerEvent::AuthRequired { url }) => {

@@ -83,7 +83,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -376,7 +376,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "cheeseboard"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arboard",
  "directories",
@@ -752,7 +752,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -911,7 +911,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2347,7 +2347,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2561,7 +2561,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3111,7 +3111,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.60.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3420,7 +3420,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3478,7 +3478,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4477,7 +4477,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4929,9 +4929,9 @@ dependencies = [
 
 [[package]]
 name = "truffle"
-version = "0.3.12"
+version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a83d3f43bfa46954bd35b5353eef6838de72fa65f69b2732b1ec21c5ccd4ba11"
+checksum = "b6a0ada56a0b200d20bdc162d46566439585a29b1770e2652753c6ae95e7d4c3"
 dependencies = [
  "truffle-core",
  "truffle-sidecar",
@@ -4939,9 +4939,9 @@ dependencies = [
 
 [[package]]
 name = "truffle-core"
-version = "0.3.12"
+version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff53fd0c212bf74c976cee4ea17e66b804fcd6140fef02f055f90d0746067a9b"
+checksum = "f632d952119e04a5bf2e86f4680d62ae9f0fd98f9024c09b5c6b7ed6a2962223"
 dependencies = [
  "futures-util",
  "getrandom 0.2.17",
@@ -4962,9 +4962,9 @@ dependencies = [
 
 [[package]]
 name = "truffle-sidecar"
-version = "0.3.12"
+version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2164eadf33db663b947c4b5707bf98fe677b08af67e11c2235484f47beed5d3"
+checksum = "885d8d0a2fa0db57bd762d90e3e480c65ee1d85b47c8aa1d1dc5d3289fefff11"
 dependencies = [
  "flate2",
  "tar",
@@ -5573,7 +5573,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
