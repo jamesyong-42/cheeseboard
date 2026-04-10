@@ -172,36 +172,26 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
 
     /// Handle an incoming clipboard message from a remote device.
     async fn handle_remote_message(&self, msg: truffle::NamespacedMessage) {
-        let device_id = match msg.payload.get("device_id").and_then(|v| v.as_str()) {
-            Some(id) => id,
-            None => {
-                tracing::warn!("Received clipboard message without device_id");
+        let payload: ClipboardPayload = match serde_json::from_value(msg.payload) {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to parse clipboard message: {e}");
                 return;
             }
         };
 
         // Skip our own messages
-        if device_id == self.device_id {
+        if payload.device_id == self.device_id {
             return;
         }
 
-        let text = match msg.payload.get("text").and_then(|v| v.as_str()) {
-            Some(t) if !t.is_empty() => t,
-            _ => return, // skip empty pings used for connection establishment
-        };
-        let fingerprint = msg
-            .payload
-            .get("fingerprint")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
-        let timestamp = msg
-            .payload
-            .get("timestamp")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0);
+        // Skip empty pings used for connection establishment
+        if payload.text.is_empty() {
+            return;
+        }
 
         self.store
-            .apply_remote(device_id, text, fingerprint, timestamp);
+            .apply_remote(&payload.device_id, &payload.text, payload.fingerprint, payload.timestamp);
         self.apply_latest_remote();
     }
 

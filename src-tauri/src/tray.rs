@@ -1,4 +1,4 @@
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::AppHandle;
 use tauri::{Emitter, Manager};
@@ -8,8 +8,15 @@ use truffle::session::PeerEvent;
 /// Tray menu item IDs.
 const MENU_QUIT: &str = "quit";
 
+/// Handles to tray menu items that need dynamic updates.
+pub struct TrayMenuItems {
+    status: MenuItem<tauri::Wry>,
+    devices: MenuItem<tauri::Wry>,
+}
+
 /// Build and register the system tray icon with context menu.
-pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+/// Returns handles to updatable menu items.
+pub fn build_tray(app: &AppHandle) -> Result<TrayMenuItems, Box<dyn std::error::Error>> {
     let status_item = MenuItemBuilder::with_id("status", "Cheeseboard: Starting...")
         .enabled(false)
         .build(app)?;
@@ -48,11 +55,35 @@ pub fn build_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     builder.build(app)?;
 
-    Ok(())
+    Ok(TrayMenuItems {
+        status: status_item,
+        devices: devices_item,
+    })
+}
+
+/// Emit auth-required status to the onboarding window.
+pub fn emit_auth_required(app: &AppHandle, url: &str) {
+    tracing::info!("Tailscale auth required: {url}");
+    if let Some(win) = app.get_webview_window("onboarding") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+    let _ = app.emit(
+        "cheeseboard://status",
+        serde_json::json!({
+            "state": "auth_required",
+            "auth_url": url,
+            "devices": [],
+        }),
+    );
 }
 
 /// Spawn a background task that updates the tray based on peer events.
-pub fn spawn_tray_updater(app_handle: AppHandle, mut event_rx: broadcast::Receiver<PeerEvent>) {
+pub fn spawn_tray_updater(
+    app_handle: AppHandle,
+    mut event_rx: broadcast::Receiver<PeerEvent>,
+    tray_items: TrayMenuItems,
+) {
     tokio::spawn(async move {
         let mut peer_names: Vec<(String, String)> = Vec::new(); // (id, name)
 
@@ -62,20 +93,20 @@ pub fn spawn_tray_updater(app_handle: AppHandle, mut event_rx: broadcast::Receiv
                     if !peer_names.iter().any(|(id, _)| id == &state.id) {
                         peer_names.push((state.id.clone(), state.name.clone()));
                     }
-                    update_status("Cheeseboard: Connected");
-                    update_devices(&peer_names);
+                    let _ = tray_items.status.set_text("Cheeseboard: Connected");
+                    update_devices_menu(&tray_items.devices, &peer_names);
                     emit_connected(&app_handle, &peer_names);
                 }
                 Ok(PeerEvent::Left(id)) => {
                     peer_names.retain(|(pid, _)| pid != &id);
-                    update_devices(&peer_names);
+                    update_devices_menu(&tray_items.devices, &peer_names);
                     emit_connected(&app_handle, &peer_names);
                 }
                 Ok(PeerEvent::Updated(state)) => {
                     if let Some(entry) = peer_names.iter_mut().find(|(id, _)| id == &state.id) {
                         entry.1 = state.name.clone();
                     }
-                    update_devices(&peer_names);
+                    update_devices_menu(&tray_items.devices, &peer_names);
                 }
                 Ok(PeerEvent::WsConnected(id)) => {
                     tracing::info!("Peer connected: {id}");
@@ -84,21 +115,8 @@ pub fn spawn_tray_updater(app_handle: AppHandle, mut event_rx: broadcast::Receiv
                     tracing::info!("Peer disconnected: {id}");
                 }
                 Ok(PeerEvent::AuthRequired { url }) => {
-                    update_status("Cheeseboard: Auth Required");
-                    tracing::info!("Tailscale auth required: {url}");
-
-                    // Show onboarding window with auth prompt
-                    if let Some(win) = app_handle.get_webview_window("onboarding") {
-                        let _ = win.show();
-                    }
-                    let _ = app_handle.emit(
-                        "cheeseboard://status",
-                        serde_json::json!({
-                            "state": "auth_required",
-                            "auth_url": url,
-                            "devices": [],
-                        }),
-                    );
+                    let _ = tray_items.status.set_text("Cheeseboard: Auth Required");
+                    emit_auth_required(&app_handle, &url);
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("Tray event receiver lagged by {n}");
@@ -120,15 +138,12 @@ fn emit_connected(app: &AppHandle, peers: &[(String, String)]) {
     );
 }
 
-fn update_status(text: &str) {
-    tracing::info!("Tray status: {text}");
-}
-
-fn update_devices(peers: &[(String, String)]) {
-    if peers.is_empty() {
-        tracing::info!("Tray devices: none");
+fn update_devices_menu(devices_item: &MenuItem<tauri::Wry>, peers: &[(String, String)]) {
+    let text = if peers.is_empty() {
+        "No devices".to_string()
     } else {
         let names: Vec<&str> = peers.iter().map(|(_, n)| n.as_str()).collect();
-        tracing::info!("Tray devices: {}", names.join(", "));
-    }
+        format!("Devices: {}", names.join(", "))
+    };
+    let _ = devices_item.set_text(&text);
 }

@@ -15,6 +15,9 @@ use config::AppConfig;
 use tauri::{Emitter, Manager};
 use truffle::NodeBuilder;
 
+/// Type-erased wrapper to keep the truffle node alive via Tauri managed state.
+struct NodeKeepAlive(#[allow(dead_code)] Box<dyn std::any::Any + Send + Sync>);
+
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -32,7 +35,7 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            tray::build_tray(&app_handle)?;
+            let tray_items = tray::build_tray(&app_handle)?;
 
             // Show onboarding window on first launch (or if no auth state)
             if needs_onboarding() {
@@ -43,8 +46,10 @@ fn main() {
 
             let handle = app_handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = async_setup(handle).await {
+                let error_handle = handle.clone();
+                if let Err(e) = async_setup(handle, tray_items).await {
                     tracing::error!("Setup failed: {e}");
+                    emit_status(&error_handle, "error", None, &[]);
                 }
             });
 
@@ -86,7 +91,10 @@ fn emit_status(app: &tauri::AppHandle, state: &str, auth_url: Option<&str>, devi
     );
 }
 
-async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+async fn async_setup(
+    app_handle: tauri::AppHandle,
+    tray_items: tray::TrayMenuItems,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Step 1: Load config
     let config = AppConfig::load_or_create()?;
     tracing::info!("Device: {} ({})", config.device_name, config.device_id);
@@ -114,20 +122,7 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
             .sidecar_path(&sidecar_path)
             .state_dir(&state_dir_str)
             .build_with_auth_handler(move |url| {
-                tracing::info!("Auth required, notifying onboarding window");
-                // Show onboarding window and send auth URL
-                if let Some(win) = auth_handle.get_webview_window("onboarding") {
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                }
-                let _ = auth_handle.emit(
-                    "cheeseboard://status",
-                    serde_json::json!({
-                        "state": "auth_required",
-                        "auth_url": url,
-                        "devices": [],
-                    }),
-                );
+                tray::emit_auth_required(&auth_handle, &url);
             })
             .await?,
     );
@@ -148,13 +143,13 @@ async fn async_setup(app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::er
 
     // Step 7: Spawn tray updater with peer events
     let peer_rx = node.on_peer_change();
-    tray::spawn_tray_updater(app_handle.clone(), peer_rx);
+    tray::spawn_tray_updater(app_handle.clone(), peer_rx, tray_items);
 
     // Connected -- notify the onboarding window
     emit_status(&app_handle, "connected", None, &[]);
 
-    // Keep node alive for the lifetime of the app.
-    std::mem::forget(node);
+    // Keep the node alive for the lifetime of the app via Tauri managed state.
+    app_handle.manage(NodeKeepAlive(Box::new(node)));
 
     tracing::info!("Cheeseboard setup complete");
 

@@ -22,7 +22,6 @@ pub struct ClipboardEntry {
 #[derive(Debug, Clone)]
 struct RemoteClip {
     text: String,
-    #[allow(dead_code)] // stored for future dedup of incoming messages
     fingerprint: u64,
     timestamp: u64,
 }
@@ -106,6 +105,12 @@ impl ClipboardHistoryStore {
         // Don't apply our own clips
         if device_id == inner.device_id {
             return;
+        }
+        // Dedup: skip if we already have this exact content from this device
+        if let Some(existing) = inner.remote_clips.get(device_id) {
+            if existing.fingerprint == fingerprint {
+                return;
+            }
         }
         tracing::debug!("Applied remote clip from device {device_id}");
         inner.remote_clips.insert(
