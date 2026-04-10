@@ -190,8 +190,12 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
             return;
         }
 
-        self.store
-            .apply_remote(&payload.device_id, &payload.text, payload.fingerprint, payload.timestamp);
+        self.store.apply_remote(
+            &payload.device_id,
+            &payload.text,
+            payload.fingerprint,
+            payload.timestamp,
+        );
         self.apply_latest_remote();
     }
 
