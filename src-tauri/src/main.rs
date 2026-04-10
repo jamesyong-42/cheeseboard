@@ -4,6 +4,7 @@
 mod clipboard;
 mod config;
 mod tray;
+mod updater;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,6 +37,9 @@ fn main() {
             let app_handle = app.handle().clone();
 
             let tray_items = tray::build_tray(&app_handle)?;
+
+            // Spawn background update-check loop (20s delay, 6h interval)
+            updater::spawn_update_loop(app_handle.clone());
 
             // Show onboarding window on first launch (or if no auth state)
             if needs_onboarding() {

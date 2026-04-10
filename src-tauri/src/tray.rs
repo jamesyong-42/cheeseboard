@@ -7,6 +7,7 @@ use truffle::session::PeerEvent;
 
 /// Tray menu item IDs.
 const MENU_QUIT: &str = "quit";
+const MENU_CHECK_UPDATE: &str = "check_update";
 
 /// Handles to tray menu items that need dynamic updates.
 pub struct TrayMenuItems {
@@ -25,6 +26,9 @@ pub fn build_tray(app: &AppHandle) -> Result<TrayMenuItems, Box<dyn std::error::
         .enabled(false)
         .build(app)?;
 
+    let update_item =
+        MenuItemBuilder::with_id(MENU_CHECK_UPDATE, "Check for updates…").build(app)?;
+
     let quit_item = MenuItemBuilder::with_id(MENU_QUIT, "Quit Cheeseboard")
         .accelerator("CmdOrCtrl+Q")
         .build(app)?;
@@ -34,6 +38,7 @@ pub fn build_tray(app: &AppHandle) -> Result<TrayMenuItems, Box<dyn std::error::
         .separator()
         .item(&devices_item)
         .separator()
+        .item(&update_item)
         .item(&quit_item)
         .build()?;
 
@@ -42,11 +47,18 @@ pub fn build_tray(app: &AppHandle) -> Result<TrayMenuItems, Box<dyn std::error::
     let mut builder = TrayIconBuilder::with_id("cheeseboard-tray")
         .menu(&menu)
         .tooltip("Cheeseboard - Clipboard Sync")
-        .on_menu_event(move |_tray, event| {
-            if event.id().as_ref() == MENU_QUIT {
+        .on_menu_event(move |_tray, event| match event.id().as_ref() {
+            MENU_QUIT => {
                 tracing::info!("Quit requested from tray menu");
                 app_handle.exit(0);
             }
+            MENU_CHECK_UPDATE => {
+                let handle = app_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::updater::check_and_install(handle).await;
+                });
+            }
+            _ => {}
         });
 
     if let Some(icon) = app.default_window_icon() {
