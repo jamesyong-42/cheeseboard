@@ -99,8 +99,11 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
 
     /// Check if the local clipboard has changed and broadcast the update.
     async fn poll_local_clipboard(&self, last_fp: &mut u64) {
-        let text = match self.clipboard.read() {
-            Some(t) if !t.is_empty() => t,
+        // Clipboard read is a synchronous mpsc round-trip — run on a
+        // blocking thread so we don't stall the async runtime.
+        let clipboard = self.clipboard.clone();
+        let text = match tokio::task::spawn_blocking(move || clipboard.read()).await {
+            Ok(Some(t)) if !t.is_empty() => t,
             _ => return,
         };
 
@@ -112,8 +115,9 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
         }
         *last_fp = fp;
 
-        // Echo guard: skip if this is something we just wrote
-        let guard_fp = self.echo_guard_fp.load(Ordering::Relaxed);
+        // Echo guard: skip if this is something we just wrote.
+        // Acquire pairs with the Release store in apply_latest_remote.
+        let guard_fp = self.echo_guard_fp.load(Ordering::Acquire);
         if fp == guard_fp {
             return;
         }
@@ -140,33 +144,31 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
 
     /// Send current clipboard to a specific peer (triggers WS connection).
     async fn send_current_to_peer(&self, peer_id: &str) {
-        if let Some(entry) = self.store.get_local_entry() {
-            let payload = ClipboardPayload {
+        let payload = if let Some(entry) = self.store.get_local_entry() {
+            tracing::info!("Sending clipboard to new peer {peer_id} (establishing connection)");
+            ClipboardPayload {
                 text: entry.text,
                 fingerprint: entry.fingerprint,
                 device_id: self.device_id.clone(),
                 device_name: self.device_name.clone(),
                 timestamp: entry.timestamp,
-            };
-
-            if let Ok(json) = serde_json::to_vec(&payload) {
-                tracing::info!("Sending clipboard to new peer {peer_id} (establishing connection)");
-                if let Err(e) = self.node.send(peer_id, CLIPBOARD_NAMESPACE, &json).await {
-                    tracing::debug!("Failed to send to peer {peer_id}: {e}");
-                }
             }
         } else {
-            // No clipboard content yet, but still trigger connection by sending empty ping
+            // No clipboard content yet — send an empty ping to trigger the WS handshake.
             tracing::info!("New peer {peer_id} discovered, establishing connection");
-            let ping = serde_json::to_vec(&serde_json::json!({
-                "text": "",
-                "fingerprint": 0u64,
-                "device_id": &self.device_id,
-                "device_name": &self.device_name,
-                "timestamp": 0u64,
-            }))
-            .unwrap();
-            let _ = self.node.send(peer_id, CLIPBOARD_NAMESPACE, &ping).await;
+            ClipboardPayload {
+                text: String::new(),
+                fingerprint: 0,
+                device_id: self.device_id.clone(),
+                device_name: self.device_name.clone(),
+                timestamp: 0,
+            }
+        };
+
+        if let Ok(json) = serde_json::to_vec(&payload) {
+            if let Err(e) = self.node.send(peer_id, CLIPBOARD_NAMESPACE, &json).await {
+                tracing::debug!("Failed to send to peer {peer_id}: {e}");
+            }
         }
     }
 
@@ -190,12 +192,8 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
             return;
         }
 
-        self.store.apply_remote(
-            &payload.device_id,
-            &payload.text,
-            payload.fingerprint,
-            payload.timestamp,
-        );
+        self.store
+            .apply_remote(&payload.device_id, &payload.text, payload.timestamp);
         self.apply_latest_remote();
     }
 
@@ -213,8 +211,9 @@ impl<N: NetworkProvider + 'static> ClipboardMonitor<N> {
 
             tracing::debug!("Writing remote clipboard to OS (fp={fp:#x})");
 
-            // Set echo guard BEFORE writing so the next poll skips it
-            self.echo_guard_fp.store(fp, Ordering::Relaxed);
+            // Set echo guard BEFORE writing so the next poll skips it.
+            // Release pairs with the Acquire load in poll_local_clipboard.
+            self.echo_guard_fp.store(fp, Ordering::Release);
             self.clipboard.write(text);
         }
     }

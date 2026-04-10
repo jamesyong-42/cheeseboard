@@ -100,7 +100,12 @@ impl ClipboardHistoryStore {
     }
 
     /// Apply a remote clipboard update from another device.
-    pub fn apply_remote(&self, device_id: &str, text: &str, fingerprint: u64, timestamp: u64) {
+    ///
+    /// The fingerprint is always recomputed locally — caller-supplied
+    /// values come from the network and cannot be trusted.
+    pub fn apply_remote(&self, device_id: &str, text: &str, timestamp: u64) {
+        let fp = Self::fingerprint(text);
+
         let mut inner = self.inner.write().unwrap();
         // Don't apply our own clips
         if device_id == inner.device_id {
@@ -108,7 +113,7 @@ impl ClipboardHistoryStore {
         }
         // Dedup: skip if we already have this exact content from this device
         if let Some(existing) = inner.remote_clips.get(device_id) {
-            if existing.fingerprint == fingerprint {
+            if existing.fingerprint == fp {
                 return;
             }
         }
@@ -117,7 +122,7 @@ impl ClipboardHistoryStore {
             device_id.to_string(),
             RemoteClip {
                 text: text.to_string(),
-                fingerprint,
+                fingerprint: fp,
                 timestamp,
             },
         );
@@ -195,7 +200,7 @@ mod tests {
     #[test]
     fn apply_remote_and_latest() {
         let store = ClipboardHistoryStore::new("dev-1".to_string());
-        store.apply_remote("dev-2", "remote clip", 12345, 2000);
+        store.apply_remote("dev-2", "remote clip", 2000);
 
         let (text, ts) = store.latest_remote().unwrap();
         assert_eq!(text, "remote clip");
@@ -205,8 +210,8 @@ mod tests {
     #[test]
     fn latest_remote_picks_most_recent() {
         let store = ClipboardHistoryStore::new("dev-1".to_string());
-        store.apply_remote("dev-2", "older", 111, 1000);
-        store.apply_remote("dev-3", "newer", 222, 3000);
+        store.apply_remote("dev-2", "older", 1000);
+        store.apply_remote("dev-3", "newer", 3000);
 
         let (text, _) = store.latest_remote().unwrap();
         assert_eq!(text, "newer");
@@ -215,7 +220,7 @@ mod tests {
     #[test]
     fn remove_remote_works() {
         let store = ClipboardHistoryStore::new("dev-1".to_string());
-        store.apply_remote("dev-2", "x", 1, 1);
+        store.apply_remote("dev-2", "x", 1);
         store.remove_remote("dev-2");
         assert!(store.latest_remote().is_none());
     }
@@ -223,7 +228,30 @@ mod tests {
     #[test]
     fn apply_own_clip_is_ignored() {
         let store = ClipboardHistoryStore::new("dev-1".to_string());
-        store.apply_remote("dev-1", "self", 1, 1);
+        store.apply_remote("dev-1", "self", 1);
         assert!(store.latest_remote().is_none());
+    }
+
+    #[test]
+    fn apply_remote_dedups_same_text() {
+        let store = ClipboardHistoryStore::new("dev-1".to_string());
+        store.apply_remote("dev-2", "hello", 1000);
+        store.apply_remote("dev-2", "hello", 2000);
+
+        // Same text should be dedup'd; original timestamp preserved
+        let (text, ts) = store.latest_remote().unwrap();
+        assert_eq!(text, "hello");
+        assert_eq!(ts, 1000);
+    }
+
+    #[test]
+    fn apply_remote_replaces_on_different_text() {
+        let store = ClipboardHistoryStore::new("dev-1".to_string());
+        store.apply_remote("dev-2", "hello", 1000);
+        store.apply_remote("dev-2", "world", 2000);
+
+        let (text, ts) = store.latest_remote().unwrap();
+        assert_eq!(text, "world");
+        assert_eq!(ts, 2000);
     }
 }

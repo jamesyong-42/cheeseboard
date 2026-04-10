@@ -6,11 +6,13 @@ pub enum ClipboardCommand {
     Read(mpsc::Sender<Option<String>>),
     /// Write text to the clipboard.
     Write(String),
-    /// Shut down the clipboard thread.
-    Shutdown,
 }
 
 /// Handle for communicating with the clipboard thread.
+///
+/// Cloning this handle creates an additional sender to the same thread.
+/// The thread exits gracefully when the last `ClipboardThread` is dropped
+/// (all senders gone → `recv()` returns `Err`).
 #[derive(Clone)]
 pub struct ClipboardThread {
     tx: mpsc::Sender<ClipboardCommand>,
@@ -32,14 +34,10 @@ impl ClipboardThread {
                     Ok(cb) => cb,
                     Err(e) => {
                         tracing::error!("Failed to create clipboard handle: {e}");
-                        // Drain remaining commands so senders don't block
+                        // Drain remaining commands so senders don't block forever
                         while let Ok(cmd) = rx.recv() {
-                            match cmd {
-                                ClipboardCommand::Read(reply) => {
-                                    let _ = reply.send(None);
-                                }
-                                ClipboardCommand::Shutdown => break,
-                                ClipboardCommand::Write(_) => {}
+                            if let ClipboardCommand::Read(reply) = cmd {
+                                let _ = reply.send(None);
                             }
                         }
                         return;
@@ -59,10 +57,6 @@ impl ClipboardThread {
                                 tracing::warn!("Failed to write clipboard: {e}");
                             }
                         }
-                        Ok(ClipboardCommand::Shutdown) => {
-                            tracing::info!("Clipboard thread shutting down");
-                            break;
-                        }
                         Err(_) => {
                             // All senders dropped
                             tracing::info!("Clipboard thread: all senders dropped, exiting");
@@ -77,7 +71,8 @@ impl ClipboardThread {
     }
 
     /// Read the current clipboard text. Blocks briefly waiting for the
-    /// clipboard thread to respond.
+    /// clipboard thread to respond. This is a synchronous call — wrap it
+    /// in `tokio::task::spawn_blocking` when calling from async contexts.
     pub fn read(&self) -> Option<String> {
         let (reply_tx, reply_rx) = mpsc::channel();
         self.tx.send(ClipboardCommand::Read(reply_tx)).ok()?;
@@ -87,17 +82,6 @@ impl ClipboardThread {
     /// Write text to the clipboard (non-blocking send to the thread).
     pub fn write(&self, text: String) {
         let _ = self.tx.send(ClipboardCommand::Write(text));
-    }
-
-    /// Signal the clipboard thread to shut down.
-    pub fn shutdown(&self) {
-        let _ = self.tx.send(ClipboardCommand::Shutdown);
-    }
-}
-
-impl Drop for ClipboardThread {
-    fn drop(&mut self) {
-        self.shutdown();
     }
 }
 
